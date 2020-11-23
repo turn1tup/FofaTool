@@ -5,10 +5,7 @@ error_page/
 test/
 __pycache__/
 *.py[cod]
-.sqlmap_history
-traffic.txt
 *~
-req*.txt
 .idea/
 *.csv
 *.xlsx
