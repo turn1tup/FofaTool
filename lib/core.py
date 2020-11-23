@@ -162,13 +162,13 @@ class Fofa:
                         continue
                     protocol.append(tag)
                 protocol = ", ".join(protocol)
+                item_count += 1
+                seq = item_count
                 # 这里认为到了最后一页的时候，如果只有几条就会出现空数据的情况，但代码并不是完全预期去这样处理
                 if not port and not protocol and not header:
                     if self.page_read != self.page_amount:
                         logger.info(f"空结果，确认Cookie是否有效，当前第{self.page_read}页")
                     continue
-                item_count += 1
-                seq = item_count
                 try:
                     ip,foo = get_ip_port(host)
                 except:
