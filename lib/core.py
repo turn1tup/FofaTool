@@ -11,9 +11,8 @@ from lib.utils import get_ip_port, is_number, format_header, record_error_page, 
 from lib.log import logger
 requests.packages.urllib3.disable_warnings()
 from scrapy.selector import Selector
-from scrapy.http import HtmlResponse
 class Fofa:
-    def __init__(self, session, keyword, queue_in, conf, sleep_time=3, result_per_page=20, proxies={}):
+    def __init__(self, keyword, queue_in, conf):
         """
 
         :param session:
@@ -22,19 +21,40 @@ class Fofa:
         :param sleep_time: 避免被fofa屏蔽，每次查询的休眠时间
         :param result_per_page: 每页显示的个数，10或20
         """
-        self.session = session
-        self.result_per_page = result_per_page
-        self.proxies = proxies
+
+        self.session = conf["fofa_session"]
+        self.result_per_page = int(conf["result_per_page"])
+        self.sleep_time = int(conf["sleep_time"])
+        self.is_record_page = conf["is_record_page"].lower()
+        self.is_record_page = True if self.is_record_page=='true' else False
+        self.proxies = {}
+        if conf.get("proxy"):
+            self.proxies = {'http':conf['proxy'], 'https':conf['proxy']}
         self.queue_in = queue_in
         self.conf = conf
-        if keyword:
-            self.keyword = keyword
-            self.sleep_time = sleep_time
+        self.keyword = keyword
+
 
         self.valid_keyword = strip_invalid_char(self.keyword)
         if len(self.valid_keyword) > 100:
             self.valid_keyword = self.valid_keyword[:100]
-  
+
+    def check_hint(self, text):
+        """
+        检查是否发生 <p>Retry Later. 请勿频繁刷新</p> 的错误
+        :param text:
+        :return:
+        """
+        retry_hint = "Retry Later."
+        retry_hint_xpath = "/html/body/div/div/p"
+        selector = Selector(text=text)
+        r = selector.xpath(retry_hint_xpath)
+        if r:
+            hint = r.extract_first()
+            if retry_hint in hint:
+                return True
+        return False
+
 
     def set_key_word(self, keyword):
         self.keyword = keyword
@@ -62,20 +82,24 @@ class Fofa:
         key_base64 = urllib.parse.quote(key_base64)
         url = f'https://fofa.so/result?page=1&qbase64={key_base64}'
         r = requests.get(url=url, headers=self.headers, verify=False)
-        html = r.text
-        response = HtmlResponse(html, body=html, encoding='utf-8')
-        selector = Selector(response=response)
+        text = r.text
+        while self.check_hint(text):
+            logger.info("请求频率过快，休眠 %d"%self.sleep_time*3)
+            time.sleep(self.sleep_time*3)
+            r = requests.get(url=url, headers=self.headers, verify=False)
+            text = r.text
+
+        selector = Selector(text=text)
         count_xpath = "//input[@type='hidden' and @name='total_entries' and @id='total_entries']/@value"
         try:
-            self.amount_count = int(selector.xpath(count_xpath).extract()[0])
+            self.amount_count = int(selector.xpath(count_xpath).extract_first())
             self.page_amount = ceil(self.amount_count / self.result_per_page)
             self.page_left = self.page_amount
             self.page_read = 0
         except Exception as e:
             import traceback
             logger.error(traceback.format_exc())
-            logger.error("[!]error page save at : %s"%record_error_page(r.content))
-            logger.error("[!]获取总页数错误，建议重新从该关键词开始搜索（后续解决）")
+            logger.error("[!]获取总页数错误 : %s"%record_error_page(r.content))
             exit(1)
 
     def get_page_url(self, count):
@@ -95,8 +119,8 @@ class Fofa:
             raise Exception("已经完成搜索，如果需要重复搜索请删除tmp目录下的历史纪录")
 
     def next_page(self):
-        is_record_page = self.conf["is_record_page"]
-        if is_record_page:
+
+        if self.is_record_page:
             self.recover_page()
         item_count = self.page_read * self.result_per_page
         self.check_page()
@@ -108,13 +132,15 @@ class Fofa:
             result = ''
             target = self.get_page_url(self.page_read)
             r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
-
+            text = r.text
+            while self.check_hint(text):
+                logger.info("请求频率过快，休眠 %d" % (self.sleep_time * 3))
+                time.sleep(self.sleep_time * 3)
+                r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
+                text = r.text
             if self.session in str(r.cookies):
                 result = True
-            html = r.text
-
-            response = HtmlResponse(html, body=html, encoding='utf-8')
-            selector = Selector(response=response)
+            selector = Selector(text=text)
             if not result:
                 logger.warning('[!]Cookie无效，请重新获取Cookie')
                 raise Exception('[!]Cookie无效，请重新获取Cookie')
@@ -157,7 +183,7 @@ class Fofa:
                 tag_xpath = f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[@class='re-port ar']/*"
                 tags = selector.xpath(tag_xpath)
                 for tag in tags:
-                    tag = tag.xpath("text()").extract()[0]
+                    tag = tag.xpath("text()").extract_first()
                     if is_number(tag):
                         continue
                     protocol.append(tag)
@@ -179,7 +205,7 @@ class Fofa:
                 if self.queue_in:
                     self.queue_in.put([seq, ip, port, proxies, timeout, stop])
 
-                if is_record_page:
+                if self.is_record_page:
                     self.record_page()
                 yield [item_count, host, port,protocol,  ssl_domain,  server, title, certificate, header]
 

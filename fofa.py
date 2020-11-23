@@ -14,19 +14,12 @@ from lib.config import parse_config
 root_conf = parse_config("config.ini")
 
 def main():
-    # is_get_title = False # 是否需要对web网站进行访问测试，获取标题，获取标题后的数据放到另外一个 xxx_req.csv 中，后续合并数据..
-    # fofa_session = "a7b70d4249d2820ca8b61acb65964aa8"
 
-    # proxies = {
-    #     # 'http' :"http://127.0.0.1:18080",
-    #     # 'https' :"http://127.0.0.1:18080",
-    # }
 
     keywords = root_conf["keywords"]
     conf = root_conf["conf"]
-    is_get_title = conf["is_get_title"]
-    is_record_page = conf["is_record_page"]
-    fofa_session = conf["fofa_session"]
+    is_get_title = conf["is_get_title"].lower()
+    is_get_title = True if is_get_title == 'true' else False
 
     save_path = conf["save_path"]
     if not os.path.exists(save_path):
@@ -61,7 +54,7 @@ def main():
             record_thread = WriteInfo(file_name_send, queue_out)
             record_thread.start()
 
-        fofa = Fofa(fofa_session, keyword, queue_in, conf, proxies={})
+        fofa = Fofa( keyword, queue_in, conf)
         fofa.get_page_amount()
 
         for item in fofa.next_page():
