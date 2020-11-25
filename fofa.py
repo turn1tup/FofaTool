@@ -74,4 +74,9 @@ def main():
             logger.info("finish 获取标题")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except:
+        import traceback
+        print(traceback.print_exc())
+        logger.error(traceback.format_exc())

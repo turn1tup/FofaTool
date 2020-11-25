@@ -114,16 +114,22 @@ class Fofa:
         return data
 
     def check_page(self):
-        if self.page_read >= self.page_amount:
-            logger.info("已经完成搜索，如果需要重复搜索请删除tmp目录下的历史纪录")
-            raise Exception("已经完成搜索，如果需要重复搜索请删除tmp目录下的历史纪录")
+        if self.page_amount==0:
+            logger.info(f"无搜索结果，关键词{self.keyword}")
+            return False
+        elif self.page_read >= self.page_amount:
+            logger.info("已经完成搜索，如果需要重复搜索，请删除或修改tmp目录下的历史纪录")
+            return False
+        return True
 
     def next_page(self):
 
         if self.is_record_page:
-            self.recover_page()
+            if not self.recover_page():
+                return
         item_count = self.page_read * self.result_per_page
-        self.check_page()
+        if not self.check_page():
+            return
         while True:
             host = ''
             self.page_read += 1
@@ -143,7 +149,7 @@ class Fofa:
             selector = Selector(text=text)
             if not result:
                 logger.warning('[!]Cookie无效，请重新获取Cookie')
-                raise Exception('[!]Cookie无效，请重新获取Cookie')
+                return
             # 每页有result_per_page条数据
             for i in range(1, self.result_per_page+1):
 
@@ -263,4 +269,4 @@ class Fofa:
                 logger.info(f"使用历史查询记录，总页数{self.page_amount}： ，已查询页:{self.page_read}，剩余查询页:{self.page_left}")
         except Exception:
             pass
-        self.check_page()
+        return self.check_page()
