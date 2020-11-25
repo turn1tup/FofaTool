@@ -84,7 +84,7 @@ class Fofa:
         r = requests.get(url=url, headers=self.headers, verify=False)
         text = r.text
         while self.check_hint(text):
-            logger.info("请求频率过快，休眠 %d"%self.sleep_time*3)
+            logger.info("请求频率过快，休眠 %d"%(self.sleep_time*3))
             time.sleep(self.sleep_time*3)
             r = requests.get(url=url, headers=self.headers, verify=False)
             text = r.text
@@ -125,8 +125,7 @@ class Fofa:
     def next_page(self):
 
         if self.is_record_page:
-            if not self.recover_page():
-                return
+            self.recover_page()
         item_count = self.page_read * self.result_per_page
         if not self.check_page():
             return
@@ -140,7 +139,7 @@ class Fofa:
             r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
             text = r.text
             while self.check_hint(text):
-                logger.info("请求频率过快，休眠 %d" % (self.sleep_time * 3))
+                logger.info("请求频率过快，休眠 %d s" % (self.sleep_time * 3))
                 time.sleep(self.sleep_time * 3)
                 r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
                 text = r.text
@@ -256,6 +255,10 @@ class Fofa:
             }
             fw.write(json.dumps(data))
 
+    def check_history_file(self):
+        file = os.path.join(BASE_DIR, "tmp", self.valid_keyword)
+        return os.path.exists(file)
+
     def recover_page(self):
         file = os.path.join(BASE_DIR, "tmp", self.valid_keyword)
         if not os.path.exists(file):
@@ -268,5 +271,6 @@ class Fofa:
                 self.page_read = data["page_read"]
                 logger.info(f"使用历史查询记录，总页数{self.page_amount}： ，已查询页:{self.page_read}，剩余查询页:{self.page_left}")
         except Exception:
-            pass
-        return self.check_page()
+            import traceback
+            logger.warning(traceback.format_exc())
+        # return self.check_page()

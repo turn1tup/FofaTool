@@ -41,8 +41,7 @@ def main():
         file_name_send = os.path.join(save_path, file_name_send)
         fw = open(file_name, 'a', encoding="utf-8")
         writer = csv.writer(fw)
-        if not os.path.exists(file_name):
-            writer.writerow(   ["seq", "host", "port", "protocol", "ssl_domain", "server", "title", "certificate", "fofa_header"] )
+
         if is_get_title == True :
             req_threads = []
             threads_count = 30
@@ -56,7 +55,8 @@ def main():
 
         fofa = Fofa( keyword, queue_in, conf)
         fofa.get_page_amount()
-
+        if not fofa.check_history_file():
+            writer.writerow(   ["seq", "host", "port", "protocol", "ssl_domain", "server", "title", "certificate", "fofa_header"] )
         for item in fofa.next_page():
             item = fofa.analyze_item(item)
             writer.writerow(item)
