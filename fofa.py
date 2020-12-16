@@ -54,7 +54,9 @@ def main():
             record_thread.start()
 
         fofa = Fofa( keyword, queue_in, conf)
-        fofa.get_page_amount()
+        check = fofa.get_page_amount()
+        if check == 'over':
+            continue
         if not fofa.check_history_file():
             #writer.writerow(   ["seq", "host", "port", "protocol", "ssl_domain", "server", "title", "certificate",
             # "fofa_header"] )

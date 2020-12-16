@@ -39,6 +39,7 @@ class Fofa:
         if len(self.valid_keyword) > 100:
             self.valid_keyword = self.valid_keyword[:100]
 
+        self.page_amount = None
     def check_hint(self, text):
         """
         检查是否发生 <p>Retry Later. 请勿频繁刷新</p> 的错误
@@ -77,6 +78,11 @@ class Fofa:
         :param key:
         :return:
         """
+        if self.is_record_page:
+            self.recover_page()
+
+        if not self.check_page():
+            return 'over'
 
         key_base64 = base64.b64encode(self.keyword.encode('utf-8')).decode()
         key_base64 = urllib.parse.quote(key_base64)
@@ -114,12 +120,13 @@ class Fofa:
         return data
 
     def check_page(self):
-        if self.page_amount==0:
-            logger.info(f"无搜索结果，关键词{self.keyword}")
-            return False
-        elif self.page_read >= self.page_amount:
-            logger.info("已经完成搜索，如果需要重复搜索，请删除或修改tmp目录下的历史纪录")
-            return False
+        if self.page_amount:
+            if self.page_amount==0:
+                logger.info(f"无搜索结果，关键词{self.keyword}")
+                return False
+            elif self.page_read >= self.page_amount:
+                logger.info("已经完成搜索，如果需要重复搜索，请删除或修改tmp目录下的历史纪录")
+                return False
         return True
 
     def item_header(self):
@@ -129,8 +136,8 @@ class Fofa:
 
     def next_page(self):
 
-        if self.is_record_page:
-            self.recover_page()
+        # if self.is_record_page:
+        #     self.recover_page()
         item_count = self.page_read * self.result_per_page
         if not self.check_page():
             return
