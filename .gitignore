@@ -3,6 +3,7 @@ tmp/
 result/
 error_page/
 test/
+test_*/
 __pycache__/
 *.py[cod]
 *~
