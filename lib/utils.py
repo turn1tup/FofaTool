@@ -55,7 +55,10 @@ def format_header(rsp_header):
     rsp_line, headers_s = ls
     headers = dict()
     for header_filed in headers_s.split("\n"):
-        k, v = header_filed.split(":", 1)
+        sp = header_filed.split(":", 1)
+        k = sp[0]
+        if len(sp)>1:
+            v = sp[1]
         if v:
             v = v.lstrip()
         headers[k] = v

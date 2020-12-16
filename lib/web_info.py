@@ -106,24 +106,28 @@ class WriteInfo(threading.Thread):
 
     def run(self):
         # 创建一个Workbook对象
-        workbook = Workbook()
+        #workbook = Workbook()
         # 获取当前活跃的sheet，默认是第一个sheet
-        sheet = workbook.active
+        #sheet = workbook.active
         stop = False
+        with open(self.save_file, 'w', encoding='utf-8') as fw:
+            writer = csv.writer(fw)
+            while not stop or not self.queue_out.empty():
+                try:
+                    data = self.queue_out.get_nowait()
+                    seq, url, rsp_ip, rsp_words, rsp_headers, stop_ = data
+                    # sheet.append([seq, url, rsp_ip, rsp_words, rsp_headers])
+                    writer.writerow([seq, url, rsp_ip, rsp_words, rsp_headers])
+                    # fw.flush()
+                except Exception as e:
+                    pass
+                    #print(e)
+                finally:
+                    time.sleep(0.1)
+                    stop = True
+                    for t in threading.enumerate():
+                        if isinstance(t, WebInfo):
+                            stop = False
 
-        while not stop or not self.queue_out.empty():
-            try:
-                data = self.queue_out.get_nowait()
-                seq, url, rsp_ip, rsp_words, rsp_headers, stop_ = data
-                sheet.append([seq, url, rsp_ip, rsp_words, rsp_headers])
-            except:
-                pass
-            finally:
-                time.sleep(0.1)
-                stop = True
-                for t in threading.enumerate():
-                    if isinstance(t, WebInfo):
-                        stop = False
 
-
-        workbook.save(self.save_file)
+        #workbook.save(self.save_file)

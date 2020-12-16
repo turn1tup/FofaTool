@@ -122,6 +122,11 @@ class Fofa:
             return False
         return True
 
+    def item_header(self):
+        return ['item_count', 'host', 'ip','port','region', 'asn','org',  'time',  'title', 'link', 'server_tag',
+                'protocol','ssl_domain',
+                'cert', 'response']
+
     def next_page(self):
 
         if self.is_record_page:
@@ -138,81 +143,150 @@ class Fofa:
             target = self.get_page_url(self.page_read)
             r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
             text = r.text
+
+            #检查是否存在发包过快
             while self.check_hint(text):
                 logger.info("请求频率过快，休眠 %d s" % (self.sleep_time * 3))
                 time.sleep(self.sleep_time * 3)
                 r = requests.get(url=target, headers=self.headers, proxies=self.proxies, verify=False)
                 text = r.text
-            if self.session in str(r.cookies):
-                result = True
-            selector = Selector(text=text)
-            if not result:
+
+            # 检查cookie是否有效
+            if self.session not in str(r.cookies):
                 logger.warning('[!]Cookie无效，请重新获取Cookie')
                 return
+
+            selector = Selector(text=text)
+
             # 每页有result_per_page条数据
             for i in range(1, self.result_per_page+1):
+                def common_callback(xpath, selector):
+                    result = selector.xpath(xpath).extract()
+                    data = "\t".join(result)
+                    yield data.strip()
 
-                for j in range(1, 3):
-                    host_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[1]/a[{j}])'
-                    host_result = self.get_data(host_xpath, selector)
-                    if host_result:
-                        host = host_result
-                port_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[1]/a)'
-                title_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[2])'
-                header_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[2]/div/div[1])'
-                certificate_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[4])'
-                server_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[8]/a)'
-                isp_xpath = f'normalize-space(/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[6]/a)'
-                port = self.get_data(port_xpath, selector)
-                title = self.get_data(title_xpath, selector)
-                header = self.get_data(header_xpath, selector)
-                certificate = self.get_data(certificate_xpath, selector)
-                server = self.get_data(server_xpath, selector)
-                isp = self.get_data(isp_xpath, selector)
-                if port:
-                    port = int(port)
-                ssl_domain = re.findall(r'(?<=CommonName: ).*(?=Subject Public)', certificate)
-                ssl_domain = " ".join(ssl_domain).strip()
+                def time_callback(xpath, selector):
+                    data = selector.xpath(xpath).extract()
+                    if data:
+                        data = data[-1]
+                    yield data
 
-                try:
-                    ssl_domain = ssl_domain.split(' CommonName: ')[1]
-                except:
-                    ssl_domain = ''
-                if not ssl_domain and 'domain=' in header:
-                    ssl_domain = re.findall(r'(?<=domain=).*(?=;)', header)
-                    ssl_domain = " ".join(ssl_domain).strip()
-                    ssl_domain = ssl_domain.split(';')[0]
+                def port_callback(xpath, selector):
+                    tags = selector.xpath(xpath)
 
-                # 获取协议标签、端口等
-                protocol = []
-                tag_xpath = f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[@class='re-port ar']/*"
-                tags = selector.xpath(tag_xpath)
-                for tag in tags:
-                    tag = tag.xpath("text()").extract_first()
-                    if is_number(tag):
-                        continue
-                    protocol.append(tag)
-                protocol = ", ".join(protocol)
+                    for tag in tags:
+                        tag = tag.xpath("text()").extract_first()
+                        if is_number(tag):
+                            yield tag
+
+                def protocol_callback(xpath, selector):
+                    protocol = []
+                    tags = selector.xpath(xpath)
+                    for tag in tags:
+                        tag = tag.xpath("text()").extract_first()
+                        if is_number(tag):
+                            continue
+                        protocol.append(tag)
+                    yield ", ".join(protocol)
+
+                def ssl_domain_callback(xpath, selector):
+                    cert = selector.xpath(xpath).extract_first()
+                    if not cert or not len(cert):
+                        yield ''
+                    else:
+                        match = re.search(r'Subject:.+CommonName:\s*([^\s]+)', cert, re.S)
+                        if not match:
+                            yield ''
+                        else:
+                            yield match.groups()[0]
+
+                def multi_callback(xpath, selector):
+                    count = 0
+                    while True:
+                        count += 1
+                        data = selector.xpath(f"{xpath}/div[{count}]")
+                        if data:
+                            datatype_xpath = f"{xpath}/div[{count}]/text()"
+                            datatype = selector.xpath(datatype_xpath).extract_first()
+                            if datatype:
+                                datatype = datatype.strip()
+                            value_xpath = f"{xpath}/div[{count}]/a/text()"
+                            value = selector.xpath(value_xpath).extract_first()
+                            if value:
+                                value = value.strip()
+
+                            if datatype == 'ASN:':
+                                yield 'asn', value
+                            elif datatype == '组织:':
+                                yield 'org', value
+                            elif datatype == None and value and re.search("\d+\.\d+\.\d+\.\d+", value):
+                                yield 'ip', value
+                            elif count > 1 and count <= 4 and isinstance(datatype, str) and not len(datatype):
+                                yield 'region', value
+                        else:
+                            break
+
+                xpath_item = [
+                    ("multi", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]", multi_callback),
+
+                    ("time", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[@class='time']/text()",
+                     time_callback),
+
+                    ("title", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[2]/text()", common_callback),
+
+                    (
+                    "link", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[1]/a[@target='_blank']/text()",
+                    common_callback),
+
+                    ("host", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[@class='re-domain']/text()",
+                     common_callback),
+
+                    ("response", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[2]/div/div[1]/text()",
+                     common_callback),
+                    ("server_tag", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[1]/div[8]/a/text()",
+                     common_callback),
+                    ("port", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[@class='re-port ar']/*",
+                     port_callback),
+                    ("protocol", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[@class='re-port ar']/*",
+                     protocol_callback),
+                    ("cert" , f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[4]/text()",common_callback),
+                    ("ssl_domain", f"/html/body/div[1]/div[6]/div[1]/div[2]/div[{i}]/div[2]/div[4]/text()",
+                     ssl_domain_callback),
+                ]
+
+                result_data = dict()
+                for datatype, xpath, callback in xpath_item:
+                    gen = callback(xpath, selector)
+                    #            if isinstance(result, iterable):
+                    for result in gen:
+                        if isinstance(result, str):
+                            result_data[datatype] = result
+                        elif isinstance(result, tuple):
+                            result_data[result[0]] = result[1]
+
                 item_count += 1
                 seq = item_count
-                # 这里认为到了最后一页的时候，如果只有几条就会出现空数据的情况，但代码并不是完全预期去这样处理
-                if not port and not protocol and not header:
+                result_data['item_count'] = item_count
+
+                # 这里认为到了最后一页的时候，如果只有几条数据才会出现空数据的情况
+                if not result_data.get('port') and not result_data.get('protocol') and not result_data.get('response'):
                     if self.page_read != self.page_amount:
-                        logger.info(f"空结果，确认Cookie是否有效，当前第{self.page_read}页")
+                        logger.info(f"空结果，如果超过一页出现该问题请确认Cookie是否有效，当前第{self.page_read}页")
                     continue
-                try:
-                    ip,foo = get_ip_port(host)
-                except:
-                    ip = host
+
+
                 proxies = self.proxies
                 timeout = 3
                 stop = False
+
+                # 用于爬虫抓取web标题
                 if self.queue_in:
-                    self.queue_in.put([seq, ip, port, proxies, timeout, stop])
+                    self.queue_in.put([seq, result_data.get('ip'), result_data.get('port'), proxies, timeout, stop])
 
                 if self.is_record_page:
                     self.record_page()
-                yield [item_count, host, port,protocol,  ssl_domain,  server, title, certificate, header]
+
+                yield  [result_data.get(i) for i in self.item_header()]
 
             if self.page_left <= 0:
                 return
@@ -224,23 +298,24 @@ class Fofa:
         :param item:
         :return:
         """
-        item_count, host, port, protocol, ssl_domain, server, title, certificate, header = item
-        fmt = format_header(header)
+        item_count, host, ip, port, region, asn, org, time, title, link, server_tag,protocol, ssl_domain,cert, \
+        response = item
+        fmt = format_header(response)
         if fmt:
             rsp_line, headers = fmt
-            print(headers)
         if not protocol:
-
-            if host:
-                if host.startswith("https://"):
+            if link:
+                if link.startswith("https://"):
                     protocol = "https"
-                elif host.startswith("http://"):
+                elif link.startswith("http://"):
                     protocol = "http"
         if not protocol:
-            if header and header.startswith("HTTP"):
+            if response and response.startswith("HTTP"):
                 protocol = "http"
-
-        return [item_count, host, port, protocol, ssl_domain, server, title, certificate, header]
+        if not host and ip:
+            host = ip
+        return [item_count, host, ip, port, region, asn, org, time, title, link, server_tag,protocol, ssl_domain,cert,
+                response]
 
     def record_page(self):
         path = os.path.join(BASE_DIR,"tmp")

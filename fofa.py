@@ -56,7 +56,10 @@ def main():
         fofa = Fofa( keyword, queue_in, conf)
         fofa.get_page_amount()
         if not fofa.check_history_file():
-            writer.writerow(   ["seq", "host", "port", "protocol", "ssl_domain", "server", "title", "certificate", "fofa_header"] )
+            #writer.writerow(   ["seq", "host", "port", "protocol", "ssl_domain", "server", "title", "certificate",
+            # "fofa_header"] )
+            fw.flush()
+            writer.writerow(   fofa.item_header() )
         for item in fofa.next_page():
             item = fofa.analyze_item(item)
             writer.writerow(item)
@@ -71,9 +74,10 @@ def main():
             for t in req_threads:
                 t.join()
             record_thread.join()
-            logger.info("finish 获取标题")
+            logger.info("finished 获取标题")
 
 if __name__ == '__main__':
+    # ip=101.89.95.024_req
     try:
         main()
     except:
